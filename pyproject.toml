@@ -1,0 +1,32 @@
+[project]
+name = "topic-worker-faculytics"
+version = "1.0.0"
+description = "BERTopic topic modeling worker for Faculytics analysis pipeline (RunPod serverless)"
+requires-python = ">=3.11"
+dependencies = [
+    "runpod>=1.7.0",
+    "pydantic>=2.0",
+    "sentence-transformers>=3.0",
+    "bertopic>=0.16.0",
+    "umap-learn>=0.5.6",
+    "hdbscan>=0.8.33",
+    "scikit-learn>=1.4.0",
+    "gensim>=4.3.0",
+    "numpy>=1.26.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
