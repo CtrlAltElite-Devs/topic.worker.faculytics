@@ -36,6 +36,15 @@ jobs:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
+      - name: Notify Discord deployment started
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "CHAT CHAT CHAT!!! 🏃💨 si ${{github.actor}} kay nag deploy sa Topic Worker to PRODUCTION!!! Hold on let me cook 🔥🔥🔥"
+
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -86,3 +95,23 @@ jobs:
             exit 1
           fi
           echo "Template updated to ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}"
+
+      - name: Notify Discord deployment failed
+        if: failure()
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "Bro... 💀 ang Topic Worker deployment ni ${{github.actor}} FAILED!!! This is NOT speed chat, this is NOT speed 😭🔴"
+
+      - name: Notify Discord deployment succeeded
+        if: success()
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "WWWWWW Topic Worker deployed to Production!!! ⚡🚀 si ${{github.actor}} ikaw na jud dawg, SUUUUIIII ✅🐐"

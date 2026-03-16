@@ -30,3 +30,23 @@ jobs:
 
       - name: Test
         run: uv run pytest tests/ -v
+
+      - name: Notify Discord on failure
+        if: failure()
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "SUUUUIII--- wait... 💀 ang lint/test sa Topic Worker ni ${{github.actor}} NAGUBA!!! Bro unsa ni?? Fix your code dawg 😭🔴"
+
+      - name: Notify Discord on success
+        if: success()
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "SUUUUUIIIIII ⚡ Topic Worker CI PASSED!!! si ${{github.actor}} kay goated fr fr 🐐✅ WWWWW chat WWWWW"
