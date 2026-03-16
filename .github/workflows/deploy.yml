@@ -1,0 +1,117 @@
+name: Deploy to RunPod
+
+on:
+  release:
+    types: [published]
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/topic-worker
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint
+        run: |
+          uv run ruff check src/ tests/
+          uv run ruff format --check src/ tests/
+
+      - name: Test
+        run: uv run pytest tests/ -v
+
+  build-and-push:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord deployment started
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "CHAT CHAT CHAT!!! 🏃💨 si ${{github.actor}} kay nag deploy sa Topic Worker to PRODUCTION!!! Hold on let me cook 🔥🔥🔥"
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract version from release tag
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  update-runpod:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version from release tag
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update RunPod template image
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X PATCH \
+            "https://rest.runpod.io/v1/templates/${{ secrets.RUNPOD_TEMPLATE_ID }}" \
+            -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"imageName\": \"docker.io/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}\"}")
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+          echo "Response: $body"
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Failed to update RunPod template (HTTP $http_code)"
+            exit 1
+          fi
+          echo "Template updated to ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}"
+
+      - name: Notify Discord deployment failed
+        if: failure()
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "Bro... 💀 ang Topic Worker deployment ni ${{github.actor}} FAILED!!! This is NOT speed chat, this is NOT speed 😭🔴"
+
+      - name: Notify Discord deployment succeeded
+        if: success()
+        uses: Ilshidur/action-discord@0.4.0
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOYMENT_WEBHOOK }}
+          DISCORD_USERNAME: "IShowSpeed"
+          DISCORD_AVATAR: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTumYcOCdUsVMQj9L_eYWlZDe-9MR_R42jp5Q&s"
+        with:
+          args: "WWWWWW Topic Worker deployed to Production!!! ⚡🚀 si ${{github.actor}} ikaw na jud dawg, SUUUUIIII ✅🐐"

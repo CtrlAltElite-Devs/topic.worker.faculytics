@@ -5,7 +5,6 @@ Matches the Zod schemas in api.faculytics/src/modules/analysis/dto/topic-model-w
 
 from pydantic import BaseModel, ConfigDict
 
-
 # --- Request ---
 
 

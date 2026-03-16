@@ -1,11 +1,9 @@
 """Tests for the RunPod handler (input validation and domain error paths)."""
 
-import pytest
-
 # Import only models and config — avoid importing handler directly since
 # it loads the model at module level. Test the logic functions instead.
-from src.models import TopicModelRequest, RequestItem, RequestParams
 from src.config import DEFAULT_PARAMS
+from src.models import RequestItem, TopicModelRequest
 
 
 class TestTopicModelRequest:
@@ -47,12 +45,14 @@ class TestTopicModelRequest:
         assert request.params is None
 
     def test_request_item_extra_fields_ignored(self):
-        item = RequestItem.model_validate({
-            "submissionId": "s1",
-            "text": "hello",
-            "embedding": [0.1] * 768,
-            "extraField": "ignored",
-        })
+        item = RequestItem.model_validate(
+            {
+                "submissionId": "s1",
+                "text": "hello",
+                "embedding": [0.1] * 768,
+                "extraField": "ignored",
+            }
+        )
         assert item.submissionId == "s1"
 
 
