@@ -3,7 +3,7 @@ RunPod serverless handler for topic modeling.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import runpod
@@ -29,7 +29,7 @@ def _fail(error: str) -> dict:
         version=WORKER_VERSION,
         status="failed",
         error=error,
-        completedAt=datetime.now(timezone.utc).isoformat(),
+        completedAt=datetime.now(UTC).isoformat(),
     ).model_dump()
 
 
@@ -97,9 +97,7 @@ def handler(event: dict) -> dict:
         outlier_count = sum(1 for t in model.topics_ if t == -1)
 
         # Compute metrics
-        metrics = compute_metrics(
-            model, model.topics_, texts, embeddings, embed_model=embed_model
-        )
+        metrics = compute_metrics(model, model.topics_, texts, embeddings, embed_model=embed_model)
 
         response = TopicModelResponse(
             version=WORKER_VERSION,
@@ -108,12 +106,12 @@ def handler(event: dict) -> dict:
             assignments=assignments,
             metrics=metrics,
             outlierCount=outlier_count,
-            completedAt=datetime.now(timezone.utc).isoformat(),
+            completedAt=datetime.now(UTC).isoformat(),
         )
 
         return response.model_dump()
 
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in handler")
         # Infrastructure error — let RunPod return error status → BullMQ will retry
         raise

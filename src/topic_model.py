@@ -20,43 +20,204 @@ logger = logging.getLogger(__name__)
 
 # Stop words: English + high-frequency Cebuano/Tagalog function words
 # These are grammatical tokens that dominate c-TF-IDF without adding topic signal
-MULTILINGUAL_STOP_WORDS = list({
-    # Role/title words
-    "propesor", "estudyante", "guro", "magaaral", "maestra", "maestro",
-    "students", "student", "maam", "sir", "professor", "teacher", "instructor",
-    "faculty", "atty", "miss",
-    # English stop words (core subset)
-    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
-    "being", "have", "has", "had", "do", "does", "did", "will", "would",
-    "could", "should", "may", "might", "shall", "can", "that", "this",
-    "these", "those", "it", "its", "i", "me", "my", "we", "our", "you",
-    "your", "he", "she", "they", "his", "her", "their", "as", "not",
-    "also", "so", "if", "than", "then", "when", "what", "how", "all",
-    "very", "just", "more", "about", "up", "out", "no", "him",
-    # Cebuano function words + possessives + filler
-    "ang", "nga", "sa", "ni", "si", "ug", "og", "kay", "ba", "na",
-    "man", "lang", "ra", "jud", "gyud", "ko", "mo", "mi", "siya",
-    "niya", "nako", "imo", "iya", "ato", "nato", "namo", "kamo",
-    "sila", "nila", "kang", "kanang", "kanila", "dili", "wala",
-    "naa", "adto", "diri", "didto", "pero",
-    # Cebuano possessives
-    "iyang", "kanyang", "among", "atong", "ilang", "inyong",
-    # High-frequency Cebuano filler
-    "kaayo", "mao", "bawat", "aralin", "klase", "gawain",
-    # Generic action verbs
-    "nagbibigay", "naguse", "nagtatakda", "naggagamit", "ginagamit",
-    "nagbibigay ng", "ginagamit ng",
-    # Generic English filler
-    "really", "much", "am", "way", "feel", "truly",
-    # Generic time/context words
-    "every", "during", "specific", "even",
-    # Tagalog function words
-    "ng", "mga", "ay", "nang", "rin", "din", "po", "ho", "yung",
-    "kasi", "naman", "pa", "pag", "kung", "dahil", "para",
-    "hindi", "at", "o", "namin", "natin",
-    "nila", "ito", "iyon", "yon", "dito", "doon",
-})
+MULTILINGUAL_STOP_WORDS = list(
+    {
+        # Role/title words
+        "propesor",
+        "estudyante",
+        "guro",
+        "magaaral",
+        "maestra",
+        "maestro",
+        "students",
+        "student",
+        "maam",
+        "sir",
+        "professor",
+        "teacher",
+        "instructor",
+        "faculty",
+        "atty",
+        "miss",
+        # English stop words (core subset)
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "that",
+        "this",
+        "these",
+        "those",
+        "it",
+        "its",
+        "i",
+        "me",
+        "my",
+        "we",
+        "our",
+        "you",
+        "your",
+        "he",
+        "she",
+        "they",
+        "his",
+        "her",
+        "their",
+        "as",
+        "not",
+        "also",
+        "so",
+        "if",
+        "than",
+        "then",
+        "when",
+        "what",
+        "how",
+        "all",
+        "very",
+        "just",
+        "more",
+        "about",
+        "up",
+        "out",
+        "no",
+        "him",
+        # Cebuano function words + possessives + filler
+        "ang",
+        "nga",
+        "sa",
+        "ni",
+        "si",
+        "ug",
+        "og",
+        "kay",
+        "ba",
+        "na",
+        "man",
+        "lang",
+        "ra",
+        "jud",
+        "gyud",
+        "ko",
+        "mo",
+        "mi",
+        "siya",
+        "niya",
+        "nako",
+        "imo",
+        "iya",
+        "ato",
+        "nato",
+        "namo",
+        "kamo",
+        "sila",
+        "nila",
+        "kang",
+        "kanang",
+        "kanila",
+        "dili",
+        "wala",
+        "naa",
+        "adto",
+        "diri",
+        "didto",
+        "pero",
+        # Cebuano possessives
+        "iyang",
+        "kanyang",
+        "among",
+        "atong",
+        "ilang",
+        "inyong",
+        # High-frequency Cebuano filler
+        "kaayo",
+        "mao",
+        "bawat",
+        "aralin",
+        "klase",
+        "gawain",
+        # Generic action verbs
+        "nagbibigay",
+        "naguse",
+        "nagtatakda",
+        "naggagamit",
+        "ginagamit",
+        "nagbibigay ng",
+        "ginagamit ng",
+        # Generic English filler
+        "really",
+        "much",
+        "am",
+        "way",
+        "feel",
+        "truly",
+        # Generic time/context words
+        "every",
+        "during",
+        "specific",
+        "even",
+        # Tagalog function words
+        "ng",
+        "mga",
+        "ay",
+        "nang",
+        "rin",
+        "din",
+        "po",
+        "ho",
+        "yung",
+        "kasi",
+        "naman",
+        "pa",
+        "pag",
+        "kung",
+        "dahil",
+        "para",
+        "hindi",
+        "at",
+        "o",
+        "namin",
+        "natin",
+        "nila",
+        "ito",
+        "iyon",
+        "yon",
+        "dito",
+        "doon",
+    }
+)
 
 
 def run_bertopic(
@@ -130,7 +291,8 @@ def run_bertopic(
 
     n_topics = len(set(topic_model.topics_)) - (1 if -1 in topic_model.topics_ else 0)
     n_outliers = sum(1 for t in topic_model.topics_ if t == -1)
-    logger.info(f"Found {n_topics} topics, {n_outliers} outliers ({n_outliers / len(texts) * 100:.1f}%)")
+    outlier_pct = n_outliers / len(texts) * 100
+    logger.info(f"Found {n_topics} topics, {n_outliers} outliers ({outlier_pct:.1f}%)")
 
     return topic_model
 
@@ -148,12 +310,14 @@ def extract_topic_info(model: BERTopic) -> list[dict[str, Any]]:
         topic_words = model.get_topic(topic_id)
         keywords = [word for word, _ in topic_words[:10]] if topic_words else []
 
-        results.append({
-            "topicIndex": topic_id,
-            "rawLabel": row.get("Name", f"Topic_{topic_id}"),
-            "keywords": keywords,
-            "docCount": row["Count"],
-        })
+        results.append(
+            {
+                "topicIndex": topic_id,
+                "rawLabel": row.get("Name", f"Topic_{topic_id}"),
+                "keywords": keywords,
+                "docCount": row["Count"],
+            }
+        )
 
     return results
 
@@ -178,10 +342,12 @@ def get_assignments(
         if probs is not None and probs.ndim == 2:
             prob = float(probs[i].max()) if i < len(probs) else 0.0
 
-        assignments.append({
-            "submissionId": submission_id,
-            "topicIndex": int(topic_id),
-            "probability": round(prob, 4),
-        })
+        assignments.append(
+            {
+                "submissionId": submission_id,
+                "topicIndex": int(topic_id),
+                "probability": round(prob, 4),
+            }
+        )
 
     return assignments
