@@ -269,7 +269,7 @@ def run_bertopic(
     vectorizer_model = CountVectorizer(
         ngram_range=(1, 2),
         stop_words=MULTILINGUAL_STOP_WORDS,
-        min_df=2,
+        min_df=1,
     )
 
     representation_model = KeyBERTInspired()
