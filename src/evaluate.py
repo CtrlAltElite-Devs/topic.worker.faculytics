@@ -4,6 +4,8 @@ Adapted from topic-modeling.faculytics/src/evaluate.py
 """
 
 import logging
+import math
+import re
 from typing import Any
 
 import numpy as np
@@ -15,9 +17,14 @@ from sklearn.metrics import silhouette_score
 logger = logging.getLogger(__name__)
 
 
+def _tokenize(text: str) -> list[str]:
+    """Tokenize text, stripping punctuation so tokens match BERTopic keywords."""
+    return [tok for tok in re.findall(r"[a-zA-Z\u00C0-\u024F]+", text.lower()) if len(tok) > 1]
+
+
 def compute_npmi_coherence(model: BERTopic, texts: list[str], top_n: int = 10) -> float:
     """NPMI coherence — measures keyword co-occurrence. Target: > 0.1"""
-    tokenized = [text.lower().split() for text in texts]
+    tokenized = [_tokenize(text) for text in texts]
     dictionary = Dictionary(tokenized)
 
     topic_words = []
@@ -118,6 +125,13 @@ def compute_embedding_coherence(model: BERTopic, embed_model=None) -> float:
     return round(float(np.mean(scores)), 4) if scores else 0.0
 
 
+def _safe_float(value: float) -> float:
+    """Replace NaN/Inf with 0.0 to prevent invalid JSON serialization."""
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return 0.0
+    return value
+
+
 def compute_metrics(
     model: BERTopic,
     topics: list[int],
@@ -129,9 +143,9 @@ def compute_metrics(
     logger.info("Computing evaluation metrics...")
 
     return {
-        "embedding_coherence": compute_embedding_coherence(model, embed_model=embed_model),
-        "npmi_coherence": round(compute_npmi_coherence(model, texts), 4),
-        "topic_diversity": round(compute_topic_diversity(model), 4),
-        "outlier_ratio": round(compute_outlier_ratio(model), 4),
-        "silhouette_score": round(compute_silhouette(topics, embeddings), 4),
+        "embedding_coherence": _safe_float(compute_embedding_coherence(model, embed_model=embed_model)),
+        "npmi_coherence": _safe_float(round(compute_npmi_coherence(model, texts), 4)),
+        "topic_diversity": _safe_float(round(compute_topic_diversity(model), 4)),
+        "outlier_ratio": _safe_float(round(compute_outlier_ratio(model), 4)),
+        "silhouette_score": _safe_float(round(compute_silhouette(topics, embeddings), 4)),
     }

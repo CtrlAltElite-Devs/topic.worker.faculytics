@@ -49,6 +49,25 @@ def handler(event: dict) -> dict:
 
         min_topic_size = params["min_topic_size"]
 
+        # Auto-scale params for small datasets so HDBSCAN can find clusters
+        n_items = len(request.items)
+        if n_items < min_topic_size * 4:
+            scaled_min = max(5, n_items // 5)
+            if scaled_min < min_topic_size:
+                logger.info(
+                    f"Small dataset ({n_items} items): scaling min_topic_size "
+                    f"{min_topic_size} → {scaled_min}"
+                )
+                params["min_topic_size"] = scaled_min
+                min_topic_size = scaled_min
+            # Also scale UMAP neighbors to avoid exceeding dataset size
+            max_neighbors = max(5, n_items - 1)
+            if params["umap_n_neighbors"] > max_neighbors:
+                logger.info(
+                    f"Scaling umap_n_neighbors {params['umap_n_neighbors']} → {max_neighbors}"
+                )
+                params["umap_n_neighbors"] = max_neighbors
+
         # Validate minimum item count
         if len(request.items) < min_topic_size:
             return _fail(
