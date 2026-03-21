@@ -143,7 +143,9 @@ def compute_metrics(
     logger.info("Computing evaluation metrics...")
 
     return {
-        "embedding_coherence": _safe_float(compute_embedding_coherence(model, embed_model=embed_model)),
+        "embedding_coherence": _safe_float(
+            compute_embedding_coherence(model, embed_model=embed_model)
+        ),
         "npmi_coherence": _safe_float(round(compute_npmi_coherence(model, texts), 4)),
         "topic_diversity": _safe_float(round(compute_topic_diversity(model), 4)),
         "outlier_ratio": _safe_float(round(compute_outlier_ratio(model), 4)),
