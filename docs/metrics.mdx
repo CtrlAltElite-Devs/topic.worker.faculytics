@@ -1,0 +1,109 @@
+---
+title: "Quality Metrics"
+description: "Five evaluation metrics computed on every topic model run — NPMI coherence, diversity, outlier ratio, silhouette score, and embedding coherence."
+---
+
+Every successful topic model run computes five quality metrics via `compute_metrics()` in `src/evaluate.py`. These metrics are returned in the response, persisted on the `TopicModelRun` entity, and surfaced in the analysis dashboard.
+
+## Metrics Overview
+
+| Metric | Range | Target | What It Measures |
+| --- | --- | --- | --- |
+| NPMI Coherence | -1 to 1 | > 0.1 | Do topic keywords co-occur in the same documents? |
+| Topic Diversity | 0 to 1 | > 0.7 | Are topics distinct from each other? |
+| Outlier Ratio | 0 to 1 | < 0.2 | What fraction of documents couldn't be clustered? |
+| Silhouette Score | -1 to 1 | > 0.0 | Are clusters well-separated in embedding space? |
+| Embedding Coherence | 0 to 1 | > 0.5 | Are topic keywords semantically related? |
+
+## Metric Details
+
+### NPMI Coherence
+
+**Normalized Pointwise Mutual Information** measures whether the top keywords for each topic actually co-occur in the input documents.
+
+```
+NPMI(w1, w2) = (log P(w1,w2) / (P(w1) * P(w2))) / -log P(w1,w2)
+```
+
+- Uses a sliding window of 10 tokens for co-occurrence counting
+- Computed via Gensim's `CoherenceModel` with `coherence="c_npmi"`
+- Text is tokenized with a custom tokenizer that strips punctuation and keeps only alphabetic tokens > 1 character (handles Latin-script Cebuano/Tagalog)
+- Averaged across all non-outlier topics
+
+**Interpretation:**
+- `> 0.1` — keywords meaningfully co-occur (good)
+- `~0.0` — keywords are independent (random)
+- `< 0.0` — keywords anti-correlate (bad)
+
+### Topic Diversity
+
+Ratio of unique keywords across all topics. Measures whether topics are discovering distinct themes or recycling the same words.
+
+```
+diversity = |unique keywords| / |total keywords|
+```
+
+- Uses top 10 keywords per topic
+- A value of 1.0 means every keyword is unique to one topic
+- Low diversity suggests topics are too similar and could be merged
+
+### Outlier Ratio
+
+Fraction of input documents assigned to BERTopic's outlier topic (-1). These are documents that HDBSCAN couldn't confidently assign to any cluster.
+
+```
+outlier_ratio = count(topic == -1) / total_documents
+```
+
+- High outlier ratios (> 0.3) suggest `min_topic_size` may be too large or the data lacks clear clusters
+- The API filters out outlier assignments during persistence — they're not surfaced to users
+
+### Silhouette Score
+
+Measures how well-separated the clusters are in the original 768-dim embedding space (not the UMAP-reduced space).
+
+```
+silhouette = mean((b - a) / max(a, b))  for each non-outlier document
+```
+
+Where `a` = mean distance to same-cluster documents, `b` = mean distance to nearest other cluster.
+
+- Uses cosine distance (matching the embedding space)
+- Outlier documents (topic -1) are excluded
+- Returns 0.0 if fewer than 2 topics or fewer than 10 non-outlier documents
+- Range: -1 (wrong clusters) to 1 (dense, well-separated clusters)
+
+### Embedding Coherence
+
+Measures whether the top keywords for each topic are semantically related, using the LaBSE model to embed keywords and compute pairwise cosine similarity.
+
+```
+For each topic:
+  1. Encode top 10 keywords with LaBSE (normalized)
+  2. Compute all pairwise cosine similarities
+  3. Average the similarities
+
+embedding_coherence = mean(per_topic_averages)
+```
+
+- Requires the LaBSE `embed_model` (passed from the handler)
+- Returns 0.0 if no model is available
+- More robust than NPMI for multilingual text, since it captures semantic rather than surface co-occurrence
+
+## NaN Handling
+
+All metric values pass through `_safe_float()` which replaces `NaN` and `Inf` with `0.0`. This prevents JSON serialization errors when metrics can't be computed (e.g., too few documents for silhouette, division by zero in diversity).
+
+## Example Response
+
+```json
+{
+  "metrics": {
+    "npmi_coherence": 0.1523,
+    "topic_diversity": 0.8200,
+    "outlier_ratio": 0.1150,
+    "silhouette_score": 0.2341,
+    "embedding_coherence": 0.6102
+  }
+}
+```

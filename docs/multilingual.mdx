@@ -1,0 +1,73 @@
+---
+title: "Multilingual Support"
+description: "How the worker handles Cebuano, Tagalog, English, and code-switched student feedback."
+---
+
+Student feedback at the University of Cebu is written in a mix of **Cebuano**, **Tagalog**, **English**, and frequently **code-switched** combinations within a single response. The worker handles this through LaBSE embeddings and a curated multilingual stop word list.
+
+## Why LaBSE?
+
+[LaBSE](https://arxiv.org/abs/2007.01852) (Language-agnostic BERT Sentence Embeddings) is a multilingual sentence embedding model that supports 109 languages, including Filipino and Cebuano. It maps sentences from different languages into a shared 768-dimensional vector space where semantically similar sentences are close together regardless of language.
+
+This means a Cebuano comment like *"Maayo kaayo siya mo explain"* and an English comment like *"Very good at explaining"* will cluster together — exactly what's needed for topic discovery in a multilingual corpus.
+
+## Stop Words
+
+The `CountVectorizer` in the BERTopic pipeline uses a curated stop word list (`MULTILINGUAL_STOP_WORDS` in `src/topic_model.py`) that covers three categories:
+
+### English Function Words
+
+Standard grammatical tokens: articles, prepositions, pronouns, auxiliaries, and common filler words (`the`, `is`, `are`, `very`, `just`, `really`, etc.).
+
+### Cebuano Function Words
+
+Grammatical particles and high-frequency words that dominate c-TF-IDF without adding topic signal:
+
+| Category | Examples |
+| --- | --- |
+| Markers | `ang`, `nga`, `sa`, `ni`, `si` |
+| Conjunctions | `ug`/`og`, `pero` |
+| Particles | `ba`, `na`, `man`, `lang`, `ra`, `jud`/`gyud` |
+| Pronouns | `ko`, `mo`, `siya`, `niya`, `nako`, `sila`, `nila` |
+| Possessives | `iyang`, `kanyang`, `among`, `atong`, `ilang`, `inyong` |
+| Demonstratives | `dili`, `wala`, `naa`, `adto`, `diri`, `didto` |
+| Filler | `kaayo`, `mao`, `bawat` |
+
+### Tagalog Function Words
+
+Grammatical particles common in Tagalog and Filipino:
+
+| Category | Examples |
+| --- | --- |
+| Markers | `ng`, `mga`, `ay` |
+| Particles | `nang`, `rin`/`din`, `po`, `ho`, `naman`, `pa` |
+| Conjunctions | `at`, `o`, `kung`, `dahil`, `para`, `kasi` |
+| Pronouns | `namin`, `natin`, `ito`, `iyon` |
+| Negation | `hindi` |
+| Informal | `yung`, `yon`, `pag` |
+
+### Role/Title Words
+
+Common words for teachers and students that appear across all languages and don't contribute to topic differentiation:
+
+`propesor`, `estudyante`, `guro`, `magaaral`, `teacher`, `professor`, `instructor`, `maam`, `sir`, `atty`, `miss`, `faculty`, `student`, `students`
+
+## Tokenization for NPMI
+
+The NPMI coherence metric uses a custom tokenizer (`_tokenize()` in `src/evaluate.py`) that:
+
+1. Extracts only alphabetic tokens using the regex `[a-zA-Z\u00C0-\u024F]+` — this covers Latin script including accented characters used in Filipino
+2. Lowercases all tokens
+3. Filters out single-character tokens
+
+This ensures Cebuano/Tagalog words with diacritics (less common but present in formal text) are captured correctly.
+
+## Code-Switching Handling
+
+Code-switching (mixing languages within a single response) is handled implicitly:
+
+- **LaBSE embeddings** capture the semantic meaning regardless of which language fragments are used
+- **Stop words** cover all three languages, so function words from any language are filtered during c-TF-IDF
+- **KeyBERTInspired** re-ranks keywords using LaBSE similarity, which understands multilingual semantics
+
+No explicit language detection or per-language processing is needed.

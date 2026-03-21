@@ -1,0 +1,139 @@
+---
+title: "API Contract"
+description: "Request and response schemas for the topic modeling worker — field definitions, types, and examples."
+---
+
+**Source of truth:** `api.faculytics/src/modules/analysis/dto/topic-model-worker.dto.ts` (Zod schemas)
+
+**Worker schemas:** `src/models.py` (Pydantic, must stay in sync with Zod)
+
+## Endpoint
+
+`POST {TOPIC_MODEL_WORKER_URL}`
+
+When deployed on RunPod, the actual endpoint is:
+
+```
+POST https://api.runpod.ai/v2/<endpoint-id>/runsync
+Headers: { Authorization: Bearer <RUNPOD_API_KEY> }
+Body: { input: <request payload> }
+```
+
+The RunPod envelope (`input` wrapper, `output` unwrapping) is handled by the API's `RunPodBatchProcessor`.
+
+## Request
+
+```json
+{
+  "items": [
+    {
+      "submissionId": "uuid-string",
+      "text": "The pace was too fast, couldn't follow along.",
+      "embedding": [0.123, -0.456, 0.789, "... (768 floats)"]
+    }
+  ],
+  "params": {
+    "min_topic_size": 15,
+    "nr_topics": 20,
+    "umap_n_neighbors": 20,
+    "umap_n_components": 10
+  }
+}
+```
+
+### Request Fields
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `items` | array | Yes | — | Submissions that passed the sentiment gate |
+| `items[].submissionId` | string | Yes | — | Unique submission identifier |
+| `items[].text` | string | Yes | — | Pre-cleaned qualitative comment (`cleanedComment`) |
+| `items[].embedding` | number[768] | Yes | — | Pre-computed LaBSE 768-dim embedding |
+| `params` | object | No | RUN 012 defaults | BERTopic hyperparameters |
+| `params.min_topic_size` | int | No | 15 | Minimum documents per topic cluster |
+| `params.nr_topics` | int | No | 20 | Target topic count (merges until reached) |
+| `params.umap_n_neighbors` | int | No | 20 | UMAP local neighborhood size |
+| `params.umap_n_components` | int | No | 10 | UMAP output dimensions |
+
+The worker uses `ConfigDict(extra="ignore")` on all Pydantic models, so additional envelope fields sent by the API (`jobId`, `version`, `type`, `metadata`, `publishedAt`) are silently ignored during validation.
+
+## Response — Success
+
+```json
+{
+  "version": "1.0.0",
+  "status": "completed",
+  "topics": [
+    {
+      "topicIndex": 0,
+      "rawLabel": "0_fast_rushed_pace",
+      "keywords": ["fast", "rushed", "pace", "speed", "hurry", "quick", "follow", "slow", "behind", "catch"],
+      "docCount": 45
+    }
+  ],
+  "assignments": [
+    {
+      "submissionId": "uuid-string",
+      "topicIndex": 0,
+      "probability": 0.7234
+    }
+  ],
+  "metrics": {
+    "npmi_coherence": 0.1523,
+    "topic_diversity": 0.8200,
+    "outlier_ratio": 0.1150,
+    "silhouette_score": 0.2341,
+    "embedding_coherence": 0.6102
+  },
+  "outlierCount": 12,
+  "completedAt": "2026-03-21T10:35:00.000Z"
+}
+```
+
+## Response — Failure
+
+```json
+{
+  "version": "1.0.0",
+  "status": "failed",
+  "error": "Received 8 items, need at least 15 (min_topic_size) for topic modeling",
+  "completedAt": "2026-03-21T10:35:00.000Z"
+}
+```
+
+### Response Fields
+
+| Field | Type | Present | Description |
+| --- | --- | --- | --- |
+| `version` | string | Always | Worker version (from `config.WORKER_VERSION`) |
+| `status` | `"completed"` \| `"failed"` | Always | Outcome status |
+| `topics` | array | On success | Discovered topic clusters |
+| `topics[].topicIndex` | int | — | BERTopic topic ID (0, 1, 2, ...) |
+| `topics[].rawLabel` | string | — | Auto-generated label (e.g., `"0_fast_rushed_pace"`) |
+| `topics[].keywords` | string[] | — | Top 10 keywords from KeyBERTInspired |
+| `topics[].docCount` | int | — | Documents in this cluster |
+| `assignments` | array | On success | Per-document topic assignments |
+| `assignments[].submissionId` | string | — | Matches input `submissionId` |
+| `assignments[].topicIndex` | int | — | Assigned topic index |
+| `assignments[].probability` | number (0-1) | — | Assignment confidence (4 decimal places) |
+| `metrics` | object | On success | Model quality metrics (see [Metrics](/docs/metrics)) |
+| `outlierCount` | int | On success | Documents assigned to topic -1 |
+| `error` | string | On failure | Human-readable error message |
+| `completedAt` | ISO datetime | Always | Processing completion timestamp |
+
+## API-Side Processing
+
+After receiving the response, the `TopicModelProcessor` in the API:
+
+1. Validates the response against `topicModelWorkerResponseSchema` (Zod)
+2. Creates `Topic` entities for each topic (with `rawLabel`, `keywords`, `docCount`)
+3. Creates `TopicAssignment` entities — filters out assignments with probability ≤ 0.01
+4. Marks the highest-probability assignment per submission as `isDominant`
+5. Persists metrics on the `TopicModelRun` entity
+6. Calls the orchestrator to advance the pipeline to topic labeling
+
+## Notes
+
+- Outlier documents (topic -1) are **not** included in the `assignments` array
+- The `rawLabel` is later enriched with a human-readable `label` by the topic labeling stage (LLM)
+- Embeddings must be 768-dim LaBSE vectors — the same model used by the embedding worker
