@@ -52,7 +52,7 @@ def handler(event: dict) -> dict:
         # Auto-scale params for small datasets so HDBSCAN can find clusters
         n_items = len(request.items)
         if n_items < min_topic_size * 4:
-            scaled_min = max(5, n_items // 5)
+            scaled_min = max(3, n_items // 10)
             if scaled_min < min_topic_size:
                 logger.info(
                     f"Small dataset ({n_items} items): scaling min_topic_size "
@@ -60,13 +60,25 @@ def handler(event: dict) -> dict:
                 )
                 params["min_topic_size"] = scaled_min
                 min_topic_size = scaled_min
-            # Also scale UMAP neighbors to avoid exceeding dataset size
-            max_neighbors = max(5, n_items - 1)
-            if params["umap_n_neighbors"] > max_neighbors:
+
+        if n_items < 100:
+            # Scale UMAP neighbors — too many neighbors washes out local structure
+            scaled_neighbors = max(5, n_items // 4)
+            if scaled_neighbors < params["umap_n_neighbors"]:
                 logger.info(
-                    f"Scaling umap_n_neighbors {params['umap_n_neighbors']} → {max_neighbors}"
+                    f"Small dataset ({n_items} items): scaling umap_n_neighbors "
+                    f"{params['umap_n_neighbors']} → {scaled_neighbors}"
                 )
-                params["umap_n_neighbors"] = max_neighbors
+                params["umap_n_neighbors"] = scaled_neighbors
+
+            # Reduce UMAP dimensions — high-dim output is too sparse for HDBSCAN
+            max_components = 5
+            if params["umap_n_components"] > max_components:
+                logger.info(
+                    f"Small dataset ({n_items} items): scaling umap_n_components "
+                    f"{params['umap_n_components']} → {max_components}"
+                )
+                params["umap_n_components"] = max_components
 
         # Validate minimum item count
         if len(request.items) < min_topic_size:
