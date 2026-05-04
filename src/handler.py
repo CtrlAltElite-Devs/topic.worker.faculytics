@@ -4,6 +4,7 @@ RunPod serverless handler for topic modeling.
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
 import runpod
@@ -12,7 +13,18 @@ from sentence_transformers import SentenceTransformer
 from .config import DEFAULT_PARAMS, DEVICE, LABSE_MODEL, WORKER_VERSION
 from .evaluate import compute_metrics
 from .models import TopicModelRequest, TopicModelResponse
-from .topic_model import extract_topic_info, get_assignments, run_bertopic
+from .topic_model import (
+    TIER1_DEFAULTS,
+    assign_multi_topic,
+    audit_aspect_coverage,
+    build_assignments_from_multi,
+    build_bertopic_guided,
+    extract_topic_info,
+    extract_topic_info_multi,
+    get_assignments,
+    map_topics_to_aspects,
+    run_bertopic,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,12 +37,17 @@ logger.info("Model loaded.")
 
 def _fail(error: str) -> dict:
     """Build a domain-error response (no BullMQ retry)."""
+    # exclude_none=True keeps the failure payload to only populated keys.
+    # Note: 1.0.0 _fail used model_dump() (no exclude_none), so 1.1.0 omits
+    # explicit nulls that 1.0.0 included (topics, assignments, metrics,
+    # outlierCount). Optional-typed schemas (Zod, Pydantic) accept both;
+    # consumers using `'foo' in obj` membership checks will see a change.
     return TopicModelResponse(
         version=WORKER_VERSION,
         status="failed",
         error=error,
         completedAt=datetime.now(UTC).isoformat(),
-    ).model_dump()
+    ).model_dump(exclude_none=True)
 
 
 def handler(event: dict) -> dict:
@@ -114,20 +131,65 @@ def handler(event: dict) -> dict:
                     f"(need {min_topic_size})"
                 )
 
-        # Run BERTopic
-        model = run_bertopic(embeddings, texts, params, embed_model)
+        # Run BERTopic — branch on tier1_guided
+        tier1_guided = bool(params.get("tier1_guided", TIER1_DEFAULTS["tier1_guided"]))
 
-        # Extract results
-        topics_info = extract_topic_info(model)
+        aspect_mapping_payload: dict[str, dict[str, Any]] | None = None
 
-        if len(topics_info) == 0:
-            return _fail("BERTopic produced 0 topics")
+        if tier1_guided:
+            # Pre-fit aspect coverage audit (informational, non-gating)
+            coverage = audit_aspect_coverage(texts)
+            logger.info(f"aspect coverage: {coverage}")
+            weak = [a for a, c in coverage.items() if c < 50]
+            if weak:
+                logger.warning(f"aspects with <50 hits — review seeds: {weak}")
 
-        assignments = get_assignments(model, texts, submission_ids, embeddings)
+            model = build_bertopic_guided(embeddings, texts, params, embed_model)
+
+            # Compute aspect mapping once and reuse for both topics_info and the
+            # response payload. (Earlier draft computed it twice — saved here.)
+            aspect_mapping = map_topics_to_aspects(
+                model,
+                embed_model,
+                match_threshold=params.get("match_threshold", TIER1_DEFAULTS["match_threshold"]),
+                representation="Main",
+            )
+
+            topics_info = extract_topic_info_multi(model, aspect_mapping=aspect_mapping)
+            if len(topics_info) == 0:
+                return _fail("BERTopic produced 0 topics")
+
+            multi = assign_multi_topic(
+                model,
+                texts,
+                primary_threshold=params.get(
+                    "primary_threshold", TIER1_DEFAULTS["primary_threshold"]
+                ),
+                secondary_threshold=params.get(
+                    "secondary_threshold", TIER1_DEFAULTS["secondary_threshold"]
+                ),
+                secondary_gap_max=params.get(
+                    "secondary_gap_max", TIER1_DEFAULTS["secondary_gap_max"]
+                ),
+            )
+            assignments = build_assignments_from_multi(multi, submission_ids)
+
+            # Stringify topic-id keys for JSON object semantics in the response.
+            aspect_mapping_payload = {
+                str(tid): {"aspect": v["aspect"], "similarity": v["similarity"]}
+                for tid, v in aspect_mapping.items()
+            }
+        else:
+            # Legacy path — preserved verbatim for atomic rollback
+            model = run_bertopic(embeddings, texts, params, embed_model)
+            topics_info = extract_topic_info(model)
+            if len(topics_info) == 0:
+                return _fail("BERTopic produced 0 topics")
+            assignments = get_assignments(model, texts, submission_ids, embeddings)
 
         outlier_count = sum(1 for t in model.topics_ if t == -1)
 
-        # Compute metrics
+        # Compute metrics — unchanged
         metrics = compute_metrics(model, model.topics_, texts, embeddings, embed_model=embed_model)
 
         response = TopicModelResponse(
@@ -137,10 +199,13 @@ def handler(event: dict) -> dict:
             assignments=assignments,
             metrics=metrics,
             outlierCount=outlier_count,
+            aspectMapping=aspect_mapping_payload,  # None on legacy path
             completedAt=datetime.now(UTC).isoformat(),
         )
 
-        return response.model_dump()
+        # exclude_none=True keeps the legacy-path payload byte-identical to 1.0.0
+        # (modulo the bumped `version` string).
+        return response.model_dump(exclude_none=True)
 
     except Exception:
         logger.exception("Unexpected error in handler")

@@ -9,7 +9,7 @@ LABSE_MODEL = "sentence-transformers/LaBSE"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Worker version (returned in responses)
-WORKER_VERSION = "1.0.0"
+WORKER_VERSION = "1.1.0"
 
 # RUN 012 defaults — proven optimal params from experimentation
 DEFAULT_PARAMS = {

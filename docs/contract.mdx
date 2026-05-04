@@ -54,6 +54,13 @@ The RunPod envelope (`input` wrapper, `output` unwrapping) is handled by the API
 | `params.nr_topics` | int | No | 20 | Target topic count (merges until reached) |
 | `params.umap_n_neighbors` | int | No | 20 | UMAP local neighborhood size |
 | `params.umap_n_components` | int | No | 10 | UMAP output dimensions |
+| `params.hdbscan_min_samples` | int | No | 5 | HDBSCAN core-point threshold |
+| `params.tier1_guided` | bool | No | **false** in 1.1.0 (will flip to **true** in 1.2.0) | Enable aspect-aware guided topic modeling. The API caller must explicitly opt in by sending `true` for this round. |
+| `params.match_threshold` | float | No | 0.65 | Min cosine similarity for topic→aspect mapping; below = `emergent` |
+| `params.primary_threshold` | float | No | 0.20 | Min `approximate_distribution` score for a doc's primary topic |
+| `params.secondary_threshold` | float | No | 0.15 | Min score for a doc's secondary topic |
+| `params.secondary_gap_max` | float | No | 0.20 | Max (primary − secondary) gap to count as multi-topic |
+| `params.mmr_diversity` | float | No | 0.4 | MaximalMarginalRelevance diversity (0=relevant only, 1=diverse) |
 
 The worker uses `ConfigDict(extra="ignore")` on all Pydantic models, so additional envelope fields sent by the API (`jobId`, `version`, `type`, `metadata`, `publishedAt`) are silently ignored during validation.
 
@@ -61,21 +68,28 @@ The worker uses `ConfigDict(extra="ignore")` on all Pydantic models, so addition
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "status": "completed",
   "topics": [
     {
       "topicIndex": 0,
-      "rawLabel": "0_fast_rushed_pace",
-      "keywords": ["fast", "rushed", "pace", "speed", "hurry", "quick", "follow", "slow", "behind", "catch"],
-      "docCount": 45
+      "rawLabel": "0_teaches_good teaching_teach_classroom",
+      "keywords": ["teaches", "good teaching", "teach", "classroom", "teaching"],
+      "docCount": 1906,
+      "aspectLabel": "teaching_methodology",
+      "aspectSimilarity": 0.8305,
+      "isEmergent": false,
+      "keywordsMmr": ["good", "understand", "learning", "always", "class"]
     }
   ],
   "assignments": [
     {
       "submissionId": "uuid-string",
       "topicIndex": 0,
-      "probability": 0.7234
+      "probability": 0.7234,
+      "secondaryTopicIndex": 3,
+      "secondaryProbability": 0.2105,
+      "isMultiTopic": true
     }
   ],
   "metrics": {
@@ -85,19 +99,26 @@ The worker uses `ConfigDict(extra="ignore")` on all Pydantic models, so addition
     "silhouette_score": 0.2341,
     "embedding_coherence": 0.6102
   },
-  "outlierCount": 12,
-  "completedAt": "2026-03-21T10:35:00.000Z"
+  "outlierCount": 1829,
+  "aspectMapping": {
+    "-1": { "aspect": "outlier", "similarity": 0.0 },
+    "0":  { "aspect": "teaching_methodology", "similarity": 0.8305 },
+    "3":  { "aspect": "emergent", "similarity": 0.5508 }
+  },
+  "completedAt": "2026-05-04T10:35:00.000Z"
 }
 ```
+
+> **Note on `aspectMapping` keys:** the keys are **stringified topic indices** (`"-1"`, `"0"`, `"1"`, …) — *not* aspect names. Topic-id semantics let consumers cross-reference `aspectMapping[str(topic.topicIndex)]` with each topic in the `topics` array. Reading `aspectMapping["teaching_methodology"]` will raise `KeyError`.
 
 ## Response — Failure
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "status": "failed",
   "error": "Received 8 items, need at least 15 (min_topic_size) for topic modeling",
-  "completedAt": "2026-03-21T10:35:00.000Z"
+  "completedAt": "2026-05-04T10:35:00.000Z"
 }
 ```
 
@@ -112,14 +133,30 @@ The worker uses `ConfigDict(extra="ignore")` on all Pydantic models, so addition
 | `topics[].rawLabel` | string | — | Auto-generated label (e.g., `"0_fast_rushed_pace"`) |
 | `topics[].keywords` | string[] | — | Top 10 keywords from KeyBERTInspired |
 | `topics[].docCount` | int | — | Documents in this cluster |
+| `topics[].aspectLabel` | string | On success (1.1.0, guided only) | Closest matching aspect from `ASPECT_NAMES`, or `"emergent"` when below `match_threshold` |
+| `topics[].aspectSimilarity` | number (0-1) | On success (1.1.0, guided only) | Cosine similarity between topic centroid and best-match aspect centroid (4 decimal places) |
+| `topics[].isEmergent` | boolean | On success (1.1.0, guided only) | True when `aspectLabel == "emergent"` |
+| `topics[].keywordsMmr` | string[] | On success (1.1.0, guided only) | Diversified keyword list from `MaximalMarginalRelevance` (sibling to `keywords`) |
 | `assignments` | array | On success | Per-document topic assignments |
 | `assignments[].submissionId` | string | — | Matches input `submissionId` |
 | `assignments[].topicIndex` | int | — | Assigned topic index |
 | `assignments[].probability` | number (0-1) | — | Assignment confidence (4 decimal places) |
+| `assignments[].secondaryTopicIndex` | int | On success (1.1.0, multi-topic only) | Secondary topic index when document is multi-topic; omitted otherwise |
+| `assignments[].secondaryProbability` | number (0-1) | On success (1.1.0, multi-topic only) | Secondary confidence (4 decimal places); omitted when no secondary |
+| `assignments[].isMultiTopic` | boolean | On success (1.1.0, guided only) | True when both primary and secondary thresholds satisfied |
 | `metrics` | object | On success | Model quality metrics (see [Metrics](/docs/metrics)) |
 | `outlierCount` | int | On success | Documents assigned to topic -1 |
+| `aspectMapping` | object | On success (1.1.0, guided only) | `{stringTopicIndex: {aspect, similarity}}` map for every topic, including `"-1"` |
 | `error` | string | On failure | Human-readable error message |
 | `completedAt` | ISO datetime | Always | Processing completion timestamp |
+
+### Compatibility
+
+- The worker emits `version: "1.1.0"` from this release. New response fields are present **only** when `params.tier1_guided` is explicitly `true`.
+- **Default behavior is `tier1_guided=false`** in 1.1.0 — payload is byte-identical to 1.0.0 except for the bumped `version` string. The API caller must opt in by sending `tier1_guided: true` in the request `params`. This default flips to `true` in 1.2.0 once the sibling API spec (Zod + persistence) is verified in production.
+- The atomic-rollback path is to flip the API caller's request flag back to `false` (or stop sending the field) — no worker redeploy, no RunPod template patch.
+- All new response fields are optional in the schema. 1.0.0-era clients that ignore unknown keys remain compatible.
+- **API drift caveat (transient):** until the sibling API tech-spec lands and extends `topic-model-worker.dto.ts` with Zod definitions for the new fields, the API's `RunPodBatchProcessor` will silently strip them via Zod's default key-stripping behavior. Setting `tier1_guided: true` against today's API is therefore a no-op at the persistence layer — the worker computes the new fields, the API drops them. This is expected during the staged rollout (worker first, API second) but should not be confused with a worker bug.
 
 ## API-Side Processing
 
