@@ -12,8 +12,14 @@ flowchart LR
     A[768-dim LaBSE embeddings] --> B[UMAP]
     B --> C[HDBSCAN]
     C --> D[c-TF-IDF]
-    D --> E[KeyBERTInspired]
+    D --> E[KeyBERTInspired = Main]
+    D --> E2[MMR = MMR]
     E --> F[Topics + Keywords]
+    E2 --> F
+    C --> G[Aspect mapping<br/>cosine vs ASPECT_NAMES]
+    G --> F
+    C --> H[approximate_distribution<br/>multi-topic soft assign]
+    H --> F
 ```
 
 ### 1. Dimensionality Reduction (UMAP)
@@ -64,15 +70,26 @@ If the initial HDBSCAN clustering produces fewer topics than `nr_topics`, no mer
 
 ## Auto-Scaling for Small Datasets
 
-The handler automatically adjusts parameters when the dataset is too small for the defaults:
+The handler automatically adjusts parameters when the dataset is too small for the defaults
+(`handler.py:53-82`):
 
 ```python
 if n_items < min_topic_size * 4:
-    scaled_min = max(5, n_items // 5)        # min_topic_size floor: 5
-    max_neighbors = max(5, n_items - 1)      # UMAP can't exceed dataset size
+    scaled_min = max(3, n_items // 10)         # min_topic_size floor: 3
+    if scaled_min < min_topic_size:
+        params["min_topic_size"] = scaled_min
+
+if n_items < 100:
+    scaled_neighbors = max(5, n_items // 4)    # UMAP neighbors floor: 5
+    if scaled_neighbors < params["umap_n_neighbors"]:
+        params["umap_n_neighbors"] = scaled_neighbors
+    if params["umap_n_components"] > 5:
+        params["umap_n_components"] = 5
 ```
 
-This prevents HDBSCAN from producing zero clusters and UMAP from failing when `n_neighbors > n_samples`.
+This prevents HDBSCAN from producing zero clusters and UMAP from failing
+when `n_neighbors > n_samples`. The same logic applies to both legacy and
+Tier 1 guided paths.
 
 ## Output Extraction
 
@@ -105,3 +122,58 @@ The default hyperparameters come from the experimentation project (`topic-modeli
 | `nr_topics` | 20 | Target count that balances granularity vs. noise for typical class sizes |
 | `umap_n_neighbors` | 20 | Captures broader structure in the embedding space |
 | `umap_n_components` | 10 | More dimensions than typical (5) preserves information in 768-dim embeddings |
+
+## Tier 1: Aspect-Aware Guided Mode
+
+When `params.tier1_guided` is `true`, the handler runs `build_bertopic_guided`
+in `src/topic_model.py` instead of `run_bertopic`. The default in 1.1.0 is `false` —
+the API caller must explicitly opt in. Four additions to the pipeline:
+
+### 1. Pre-fit aspect coverage audit
+
+`audit_aspect_coverage(texts)` counts how many docs contain at least one seed word per
+aspect (lowercased substring match). Aspects with `<50` hits log a warning. The audit
+**does not gate the fit** — it surfaces taxonomy fit before the run starts.
+
+### 2. Guided seed topics
+
+`SEED_TOPIC_LIST` (10 lists, one per `ASPECT_NAMES` entry) is passed to BERTopic via
+`seed_topic_list=`. BERTopic biases its merge step toward these seeds, encouraging
+discovered topics to align with the institutional taxonomy. `calculate_probabilities=True`
+is also enabled — required for `approximate_distribution` (used by multi-topic assignment).
+
+### 3. MMR sibling representation
+
+The representation model is `{"Main": KeyBERTInspired(), "MMR": MaximalMarginalRelevance(diversity=0.4)}`.
+Every topic gets two keyword lists: `keywords` (centroid-relevant, from KeyBERTInspired)
+and `keywordsMmr` (diversified, exposes broader semantic coverage). `mmr_diversity` is
+configurable via the request param.
+
+### 4. Aspect mapping
+
+`map_topics_to_aspects(model, embed_model, match_threshold=0.65)` compares each topic's
+keyword centroid against the L2-normalized centroid of each aspect's seed words in LaBSE space.
+The best-match aspect is assigned when cosine similarity ≥ `match_threshold`; otherwise
+the topic is labeled `emergent`. Outlier topic `-1` always maps to `{"aspect": "outlier",
+"similarity": 0.0}`. The full mapping is returned in the top-level `aspectMapping` field
+of the response.
+
+### 5. Multi-topic soft assignment
+
+`assign_multi_topic(model, texts, primary_threshold=0.20, secondary_threshold=0.15,
+secondary_gap_max=0.20)` calls `model.approximate_distribution()` for every document.
+A document gets a primary topic when its top score ≥ `primary_threshold` (otherwise
+soft-outlier). It gets a secondary topic only when both:
+
+- `secondary_score >= secondary_threshold`
+- `(primary_score - secondary_score) < secondary_gap_max`
+
+The resulting per-document dicts (primary/secondary topic IDs and confidences plus
+`is_multi_topic`) are converted to `AssignmentItem` shape by
+`build_assignments_from_multi`, which filters out documents whose primary is `-1`.
+
+### Rollback
+
+Setting `params.tier1_guided: false` runs the legacy `run_bertopic` path verbatim and
+returns a 1.0.0-shape payload (modulo the bumped `version`). The atomic rollback path
+is therefore "flip the flag", with no worker redeploy required.

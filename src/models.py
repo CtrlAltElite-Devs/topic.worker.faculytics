@@ -19,10 +19,19 @@ class RequestItem(BaseModel):
 class RequestParams(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    # Existing (1.0.0)
     min_topic_size: int | None = None
     nr_topics: int | None = None
     umap_n_neighbors: int | None = None
     umap_n_components: int | None = None
+    hdbscan_min_samples: int | None = None
+    # NEW (Tier 1, 1.1.0)
+    tier1_guided: bool | None = None
+    match_threshold: float | None = None
+    primary_threshold: float | None = None
+    secondary_threshold: float | None = None
+    secondary_gap_max: float | None = None
+    mmr_diversity: float | None = None
 
 
 class TopicModelRequest(BaseModel):
@@ -38,16 +47,32 @@ class TopicModelRequest(BaseModel):
 
 
 class TopicItem(BaseModel):
+    # Existing (1.0.0)
     topicIndex: int
     rawLabel: str
     keywords: list[str]
     docCount: int
+    # NEW (Tier 1, 1.1.0) — optional for legacy-path compat
+    aspectLabel: str | None = None
+    aspectSimilarity: float | None = None
+    isEmergent: bool | None = None
+    keywordsMmr: list[str] | None = None
 
 
 class AssignmentItem(BaseModel):
+    # Existing (1.0.0)
     submissionId: str
     topicIndex: int
     probability: float
+    # NEW (Tier 1, 1.1.0) — optional for legacy-path compat
+    secondaryTopicIndex: int | None = None
+    secondaryProbability: float | None = None
+    isMultiTopic: bool | None = None
+
+
+class AspectMappingEntry(BaseModel):
+    aspect: str
+    similarity: float
 
 
 class MetricsResult(BaseModel):
@@ -67,3 +92,5 @@ class TopicModelResponse(BaseModel):
     outlierCount: int | None = None
     error: str | None = None
     completedAt: str
+    # NEW (Tier 1, 1.1.0)
+    aspectMapping: dict[str, AspectMappingEntry] | None = None

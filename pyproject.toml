@@ -1,6 +1,6 @@
 [project]
 name = "topic-worker-faculytics"
-version = "1.0.0"
+version = "1.1.0"
 description = "BERTopic topic modeling worker for Faculytics analysis pipeline (RunPod serverless)"
 requires-python = ">=3.11"
 dependencies = [

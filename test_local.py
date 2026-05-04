@@ -55,6 +55,11 @@ event = {
             "nr_topics": 3,
             "umap_n_neighbors": 10,
             "umap_n_components": 5,
+            "tier1_guided": True,
+            "match_threshold": 0.50,           # lower for tiny synthetic dataset
+            "primary_threshold": 0.10,         # lower for tiny synthetic dataset
+            "secondary_threshold": 0.05,
+            "secondary_gap_max": 0.30,
         },
         "metadata": {"pipelineId": "p-local", "runId": "r-local"},
         "publishedAt": "2026-03-16T00:00:00.000Z",
@@ -73,5 +78,27 @@ if result["status"] == "completed":
     print(f"Assignments: {len(result['assignments'])}")
     print(f"Outliers: {result['outlierCount']}")
     print(f"Metrics: {json.dumps(result['metrics'], indent=2)}")
+
+    # Assert (don't just print) — smoke test fails loud if guided fields are absent.
+    assert result.get("aspectMapping"), (
+        "tier1_guided=True but aspectMapping is missing/empty — handler branch broken"
+    )
+    print("\nAspect mapping:")
+    for tid, entry in result["aspectMapping"].items():
+        assert "aspect" in entry and "similarity" in entry
+        print(f"  Topic {tid}: {entry['aspect']} (sim={entry['similarity']:.4f})")
+
+    # Every guided assignment must have isMultiTopic populated (True or False, not None).
+    assert all("isMultiTopic" in a for a in result["assignments"]), (
+        "tier1_guided=True but assignments are missing isMultiTopic — adapter broken"
+    )
+    multi_count = sum(1 for a in result["assignments"] if a.get("isMultiTopic"))
+    print(f"Multi-topic assignments: {multi_count}/{len(result['assignments'])}")
+
+    # Per-topic guided fields populated (aspectLabel/aspectSimilarity/keywordsMmr).
+    for t in result["topics"]:
+        assert "aspectLabel" in t, f"Topic {t['topicIndex']} missing aspectLabel"
+        assert "aspectSimilarity" in t, f"Topic {t['topicIndex']} missing aspectSimilarity"
+        assert "keywordsMmr" in t, f"Topic {t['topicIndex']} missing keywordsMmr"
 else:
     print(f"Error: {result.get('error')}")
